@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 from math import ceil
 from multiprocessing import Pool
+import scipy.stats as stats
 
+#  Single path is generated for each iteration
 def path_sim(args):
     S0, rfr, vol, term, strike, threshold, m_days, seed = args
     np.random.seed(seed)  # Ensure different seed for each process
@@ -27,9 +29,10 @@ def path_sim(args):
     return intrinsic_value, end_stk
 
 
+# Uses the antithetic method to generate two paths for each iteration
 def anti_path_sim(args):
     S0, rfr, vol, term, strike, threshold, m_days, seed = args
-    np.random.seed(seed)  # Ensure different seed for each process
+    #np.random.seed(seed)  # Ensure different seed for each process
     dt = 1/252
     steps = ceil(term / dt)
 
@@ -61,6 +64,8 @@ def anti_path_sim(args):
     
     return avg_intrinsic_value, avg_end_stk
 
+
+# Generate paths using multiprocessing
 def gen_paths_multiprocessing(S0, rfr, vol, term, iterations, strike, threshold, m_days, num_processes):
     args = [(S0, rfr, vol, term, strike, threshold, m_days, 1 + i) for i in range(iterations)]
     
@@ -72,47 +77,76 @@ def gen_paths_multiprocessing(S0, rfr, vol, term, iterations, strike, threshold,
 
     return list(fv), list(end_stks)
 
-# Initialize parameters
-S0 = 2.61
-strike = 0.01
-rfr = 0.0402
-vol = 1.30
-term = 5.00
-iterations = 2_000_000
-threshold = 8.72
-m_days = 20
-num_processes = int(os.cpu_count() * 2/3)  # Adjust this based on your machine's capabilities
+
+# Output the results
+def output_results(fv, end_stks, rfr, term, iterations, units, S0, run_time):
+        # Calculate average present value and average ending stock price
+        df = np.exp(-rfr * term)
+        pv_arr = [value * df for value in fv]
+        std_dev = np.std(pv_arr)
+        std_err = std_dev / np.sqrt(iterations)
+        avg_end_stk = np.mean(end_stks)
+
+        # Calculate expected ending stock price and compare with average
+        exp_end_stk = S0 * np.exp(rfr * term)
+        diff = avg_end_stk - exp_end_stk
+        diff_pct = (avg_end_stk / exp_end_stk - 1) * 100
+        average_value = np.mean(pv_arr)
+        avg_total_value = average_value * units
+        # Calculate 95% confidence interval
+        z_score = stats.norm.ppf(0.975)  # two-tailed test: 1 - (0.05 / 2)
+        margin_error = z_score * std_err # margin of error
+        lower_bound = average_value - margin_error
+        upper_bound = average_value + margin_error
+        total_lower_bound = lower_bound * units
+        total_upper_bound = upper_bound * units
+        
+        # Print the results
+        print(f"\nAverage Value (per unit): {average_value:.6f}")
+        print(f"Average Value (total): {avg_total_value:,.0f}")
+        print(f"\nAvg Ending Stock Price: {avg_end_stk:.3f} \nExpected Ending Stock Price: {exp_end_stk:.3f} \nDiff: {diff:.3f} \nDiff(%): {diff_pct:.3f}%")
+        print(f"\nStandard error: {std_err:.6f}")
+        print(f"95% Confidence Interval (per unit): ({lower_bound:.6f} - {upper_bound:.6f}) Range: {upper_bound - lower_bound:.6f}")
+        print(f"95% Confidence Interval (total): ({total_lower_bound:,.0f} - {total_upper_bound:,.0f}) Range: {total_upper_bound - total_lower_bound:,.0f}")
+
+        # Output timing / run statistics
+        print(f"\nIterations: {iterations:,}")
+        print(f"\nTime taken (seconds): {run_time:.3f}")
+        print(f"Iterations per second: {iterations / (run_time):,.0f}\n")  
+    
+    
+        if output_to_csv:
+            # Export the results to a csv file
+            results_df = pd.DataFrame({'Present Value': pv_arr, 'Ending Stock Price': end_stks})
+            results_df.to_csv(f'results {iterations}.csv', index=False)
+    
 
 if __name__ == '__main__':
-    
-    # start time
-    start = time.time()
-    
-    # Run the function with multiprocessing
-    fv, end_stks = gen_paths_multiprocessing(S0, rfr, vol, term, iterations, strike, threshold, m_days, num_processes)
-    
-    # Calculate average present value and average ending stock price
-    df = np.exp(-rfr * term)
-    pv_arr = [value * df for value in fv]
-    std_dev = np.std(pv_arr)
-    std_err = std_dev / np.sqrt(iterations)
-    avg_end_stk = np.mean(end_stks)
 
-    # calculate expected ending stock price and compare with average
-    exp_end_stk = S0 * np.exp(rfr * term)
-    diff = avg_end_stk - exp_end_stk
-    diff_pct = (avg_end_stk / exp_end_stk - 1) * 100
-    print(f"\nAverage value: {np.mean(pv_arr):.8f}")
-    print(f"{avg_end_stk:.2f}, {exp_end_stk:.2f}, {diff:.2f}, {diff_pct:.2f}%")
-    print(f"standard error: {std_err:.8f}")
+    # Initialize parameters
+    S0 = 2.59
+    strike = 0.01
+    rfr = 0.0402
+    vol = 1.30
+    term = 5.00
+    iterations = 5_000_000
+    threshold = 8.72
+    m_days = 20
+    units = 81_984_644
     
-    # output end time and iterations per second
-    print(f"\nIterations: {iterations:,}")
-    print(f"\nTime taken (seconds): {time.time() - start:.3f}")
-    print(f"Iterations per second: {iterations / (time.time() - start):,.0f}")
+    # Set to True to output results to a csv file
+    output_to_csv = False
     
+    # Set the number of processes to use in multiprocessing implementation
+    num_processes = int(os.cpu_count() * 2/3)  # Adjust this based on your machine's capabilities
+
+    # Run the function with multiprocessing
+    start = time.time() # start time
+    fv, end_stks = gen_paths_multiprocessing(S0, rfr, vol, term, iterations, strike, threshold, m_days, num_processes)
+    run_time = time.time() - start # time to run simulation
     
-    # export the results to a csv file
-    results_df = pd.DataFrame({'Present Value': pv_arr, 'Ending Stock Price': end_stks})
-    results_df.to_csv(f'results {iterations}.csv', index=False)
+    # Call the output_results function
+    output_results(fv, end_stks, rfr, term, iterations, units, S0, run_time)
+    
+
     
