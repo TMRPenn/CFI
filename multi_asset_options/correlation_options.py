@@ -42,26 +42,18 @@ def two_asset_call(S1, S2, X1, X2, T, rf, vol1, vol2, rho):
     return call_price
 
 
-if __name__ == "__main__":
-    # Example usages:
-    
-    # Haug: The Complete Guide to Option Pricing Formulas, 2nd Edition, p. 206
-    call_test_1 = two_asset_call(S1=52, S2=65, X1=50, X2=70, T=0.5, 
+
+# Example usage of the two_asset_call function
+call_test_1 = two_asset_call(S1=52, S2=65, X1=50, X2=70, T=0.5, 
                                 rf=0.10, vol1=0.20, vol2=0.30, rho=0.75)
+print(f"Haug Book: \nCall price: {call_test_1:.4f}, Expected: 4.7073, Diff: {call_test_1 - 4.7073:.4f} \n")
 
-    print(f"Haug Book: \nCall price: {call_test_1:.4f}, Expected: 4.7073, Diff: {call_test_1 - 4.7073:.4f} \n")
+# Additional tests with provided data can be added here
+call_test_2 = two_asset_call(S1=65, S2=70, X1=60, X2=72, T=0.25, 
+                                rf=0.06, vol1=0.25, vol2=0.30, rho=0.80)
+print(f"Java Book: \nCall price: {call_test_2:.4f}, Expected: 3.735, Diff: {call_test_2 - 3.735:.4f} \n")
 
-
-    # Java Methods For Financial Engineering, p. 317
-    call_test_2 = two_asset_call(S1=65, S2=70, X1=60, X2=72, 
-                                 T=0.25, rf=0.06, div_yld1=0.06, div_yld2=0.06, 
-                                 vol1=0.25, vol2=0.30, rho=0.80)
-    
-    print(f"Java Book: \nCall price: {call_test_2:.4f}, Expected: 3.735, Diff: {call_test_2 - 3.735:.4f} \n")
-
-
-    # Multi-Asset Options White Paper, p. 21
-    call_test_3 = two_asset_call(S1=52, S2=65, X1=50, X2=70, T=0.5, 
+call_test_3 = two_asset_call(S1=52, S2=65, X1=50, X2=70, T=0.5, 
                                 rf=0.10, vol1=0.20, vol2=0.30, rho=0.75)
+print(f"Multi-Asset Options: \nCall price: {call_test_3:.4f}, Expected: 4.7073, Diff: {call_test_3 - 4.7073:.4f} \n")
 
-    print(f"Multi-Asset Options: \nCall price: {call_test_3:.4f}, Expected: 4.7073, Diff: {call_test_1 - 4.7073:.4f} \n")

@@ -1,4 +1,8 @@
+# STILL NEEDS TO BE TESTED
+
 """
+From Multi-Asset Options - A Numerical Study
+
 exact_price_European_two_asset_corr_call computes the exact price
 of an European two-asset correlation call option.
 

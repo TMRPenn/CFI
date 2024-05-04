@@ -8,8 +8,7 @@ def bivariate_normal_cdf(a, b, p):
     # Create a multivariate normal distribution object
     rv = multivariate_normal(mean, cov)
 
-    # Calculate the cumulative distribution function
-    # for the given limits a and b
+    # Calculate the cumulative distribution function for the given limits a and b
     prob = rv.cdf([a, b])
     return prob
 
