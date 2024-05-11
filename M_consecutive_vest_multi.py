@@ -32,7 +32,7 @@ def path_sim(args):
 # Uses the antithetic method to generate two paths for each iteration
 def anti_path_sim(args):
     S0, rfr, vol, term, strike, threshold, m_days, seed = args
-    #np.random.seed(seed)  # Ensure different seed for each process
+    np.random.seed(seed)  # Ensure different seed for each process
     dt = 1/252
     steps = ceil(term / dt)
 
@@ -80,6 +80,8 @@ def gen_paths_multiprocessing(S0, rfr, vol, term, iterations, strike, threshold,
 
 # Output the results
 def output_results(fv, end_stks, rfr, term, iterations, units, S0, run_time):
+      
+        #------ Statistics from Simulation ------#
         # Calculate average present value and average ending stock price
         df = np.exp(-rfr * term)
         pv_arr = [value * df for value in fv]
@@ -87,36 +89,45 @@ def output_results(fv, end_stks, rfr, term, iterations, units, S0, run_time):
         std_err = std_dev / np.sqrt(iterations)
         avg_end_stk = np.mean(end_stks)
 
+        #------ Expected Ending vs Simulated ------# 
         # Calculate expected ending stock price and compare with average
         exp_end_stk = S0 * np.exp(rfr * term)
         diff = avg_end_stk - exp_end_stk
         diff_pct = (avg_end_stk / exp_end_stk - 1) * 100
-        average_value = np.mean(pv_arr)
-        avg_total_value = average_value * units
+        avg_value = np.mean(pv_arr)
+        avg_total_value = avg_value * units
+
+        # Print the results
+        print(f"\nAverage Value (per unit): {avg_value:.4f}")
+        if units > 1: print(f"Average Value (total): {avg_total_value:,.0f}")
+        print(f"\nAvg Ending Stock Price: {avg_end_stk:.3f}") 
+        print(f"Expected Ending Stock Price: {exp_end_stk:.3f}")
+        print(f"Diff: {diff:.3f} \nDiff(%): {diff_pct:.3f}%")
+        print(f"\nStandard error: {std_err:.6f}")
+
+        #------ Calculate Confidence Intervals ------#
         # Calculate 95% confidence interval
         z_score = stats.norm.ppf(0.975)  # two-tailed test: 1 - (0.05 / 2)
         margin_error = z_score * std_err # margin of error
-        lower_bound = average_value - margin_error
-        upper_bound = average_value + margin_error
-        total_lower_bound = lower_bound * units
-        total_upper_bound = upper_bound * units
-        
-        # Print the results
-        print(f"\nAverage Value (per unit): {average_value:.6f}")
-        print(f"Average Value (total): {avg_total_value:,.0f}")
-        print(f"\nAvg Ending Stock Price: {avg_end_stk:.3f} \nExpected Ending Stock Price: {exp_end_stk:.3f} \nDiff: {diff:.3f} \nDiff(%): {diff_pct:.3f}%")
-        print(f"\nStandard error: {std_err:.6f}")
-        print(f"95% Confidence Interval (per unit): ({lower_bound:.6f} - {upper_bound:.6f}) Range: {upper_bound - lower_bound:.6f}")
-        print(f"95% Confidence Interval (total): ({total_lower_bound:,.0f} - {total_upper_bound:,.0f}) Range: {total_upper_bound - total_lower_bound:,.0f}")
 
-        # Output timing / run statistics
+        # 95% Confidence Interval: Per Unit
+        low_bound = avg_value - margin_error
+        up_bound = avg_value + margin_error
+        print(f"95% Confidence Interval (per unit): ({low_bound:.4f} - {up_bound:.4f}) Range: {up_bound - low_bound:.4f}")
+
+        # 95% Confidence Interval: Total
+        if units > 1:
+            low_bound = low_bound * units
+            up_bound = up_bound * units
+            print(f"95% Confidence Interval (total): ({low_bound:,.2f} - {up_bound:,.2f}) Range: {up_bound - low_bound:,.2f}")
+
+        # Output run time statistics
         print(f"\nIterations: {iterations:,}")
         print(f"\nTime taken (seconds): {run_time:.3f}")
         print(f"Iterations per second: {iterations / (run_time):,.0f}\n")  
     
-    
+        # Output to csv file
         if output_to_csv:
-            # Export the results to a csv file
             results_df = pd.DataFrame({'Present Value': pv_arr, 'Ending Stock Price': end_stks})
             results_df.to_csv(f'results {iterations}.csv', index=False)
     
@@ -124,15 +135,15 @@ def output_results(fv, end_stks, rfr, term, iterations, units, S0, run_time):
 if __name__ == '__main__':
 
     # Initialize parameters
-    S0 = 2.59
+    S0 = 5.00
     strike = 0.01
-    rfr = 0.0402
-    vol = 1.30
-    term = 5.00
-    iterations = 5_000_000
-    threshold = 8.72
+    rfr = 0.05
+    vol = 0.50
+    term = 2.00
+    iterations = 50_000
+    threshold = 10.00
     m_days = 20
-    units = 81_984_644
+    units = 1
     
     # Set to True to output results to a csv file
     output_to_csv = False
