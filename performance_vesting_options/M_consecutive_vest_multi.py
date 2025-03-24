@@ -10,7 +10,7 @@ from math import ceil
 from multiprocessing import Pool
 import scipy.stats as stats
 
-#  Single path is generated for each iteration
+# Single path is generated for each iteration
 def path_sim(args):
     S0, rfr, vol, term, strike, threshold, m_days, seed = args
     np.random.seed(seed)  # Ensure different seed for each process
@@ -26,12 +26,10 @@ def path_sim(args):
     indicator = np.any(path_df.rolling(m_days, min_periods=0).min() >= threshold)
     
     end_stk = path[-1]
-    intrinsic_value = 0
     intrinsic_value = max(end_stk - strike, 0) if indicator else 0
-    # if indicator:
-    #     intrinsic_value = max(end_stk - strike, 0)
     
-    return intrinsic_value, end_stk
+    # Return intrinsic value, ending stock price, and indicator (as 1 if hit, 0 otherwise)
+    return intrinsic_value, end_stk, int(indicator)
 
 
 # Uses the antithetic method to generate two paths for each iteration
@@ -66,106 +64,107 @@ def anti_path_sim(args):
     # Averaging the results from both paths
     avg_intrinsic_value = (intrinsic_value_1 + intrinsic_value_2) / 2
     avg_end_stk = (end_stk_1 + end_stk_2) / 2
+
+    # Sum the hit counts from both paths
+    hit_count = int(indicator_1) + int(indicator_2)
     
-    return avg_intrinsic_value, avg_end_stk
+    return avg_intrinsic_value, avg_end_stk, hit_count
 
 
 # Generate paths using multiprocessing
 def gen_paths_multiprocessing(S0, rfr, vol, term, iterations, strike, threshold, m_days, num_processes, use_antithetic):
+    # Set up the arguments for each process
     args = [(S0, rfr, vol, term, strike, threshold, m_days, 1 + i) for i in range(iterations)]
     
+    # Use multiprocessing to generate paths using the selected method
     with Pool(num_processes) as pool:
         if use_antithetic:
             results = pool.map(anti_path_sim, args)
         else:
             results = pool.map(path_sim, args)
 
-    fv, end_stks = zip(*results)
-
-    return list(fv), list(end_stks)
+    # Unzip the results into three lists: intrinsic values, ending stock prices, and threshold hit counts
+    fv, end_stks, hit_counts = zip(*results)
+    return list(fv), list(end_stks), list(hit_counts)
 
 
 # Output the results
-def output_results(fv, end_stks, rfr, term, iterations, units, S0, run_time):
-      
-        #------ Statistics from Simulation ------#
-        # Calculate average present value and average ending stock price
-        df = np.exp(-rfr * term)
-        pv_arr = [value * df for value in fv]
-        std_dev = np.std(pv_arr)
-        std_err = std_dev / np.sqrt(iterations)
-        avg_end_stk = np.mean(end_stks)
+def output_results(fv, end_stks, hit_counts, rfr, term, iterations, units, S0, run_time, use_antithetic):
+    # Calculate present values and basic statistics
+    df = np.exp(-rfr * term)                    # Discount factor
+    pv_arr = [value * df for value in fv]       # Present value of each option
+    std_dev = np.std(pv_arr)                    # Standard deviation of present values  
+    std_err = std_dev / np.sqrt(iterations)     # Standard error of the mean
+    avg_end_stk = np.mean(end_stks)             # Average ending stock price
 
-        #------ Expected Ending vs Simulated ------# 
-        # Calculate expected ending stock price and compare with average
-        exp_end_stk = S0 * np.exp(rfr * term)
-        diff = avg_end_stk - exp_end_stk
-        diff_pct = (avg_end_stk / exp_end_stk - 1) * 100
-        avg_value = np.mean(pv_arr)
-        avg_total_value = avg_value * units
+    # Expected vs. simulated ending stock price
+    exp_end_stk = S0 * np.exp(rfr * term)               
+    diff = avg_end_stk - exp_end_stk                    
+    diff_pct = (avg_end_stk / exp_end_stk - 1) * 100    
+    avg_value = np.mean(pv_arr)                         
+    avg_total_value = avg_value * units                 
 
-        # Print the results
-        print(f"\nAverage Value (per unit): {avg_value:.4f}")
-        if units > 1: print(f"Average Value (total): {avg_total_value:,.0f}")
-        print(f"\nAvg Ending Stock Price: {avg_end_stk:.3f}") 
-        print(f"Expected Ending Stock Price: {exp_end_stk:.3f}")
-        print(f"Diff: {diff:.3f} \nDiff(%): {diff_pct:.3f}%")
-        print(f"\nStandard error: {std_err:.6f}")
+    print(f"\nAverage Value (per unit): {avg_value:.4f}")
+    if units > 1:
+        print(f"Average Value (total): {avg_total_value:,.0f}")
+    print(f"\nAvg Ending Stock Price: {avg_end_stk:.3f}") 
+    print(f"Expected Ending Stock Price: {exp_end_stk:.3f}")
+    print(f"Diff: {diff:.3f} \nDiff(%): {diff_pct:.3f}%")
+    print(f"\nStandard error: {std_err:.6f}")
 
-        #------ Calculate Confidence Intervals ------#
-        # Calculate 95% confidence interval
-        z_score = stats.norm.ppf(0.975)  # two-tailed test: 1 - (0.05 / 2)
-        margin_error = z_score * std_err # margin of error
+    # 95% Confidence Interval calculation
+    z_score = stats.norm.ppf(0.975)         # two-tailed test: 1 - (0.05 / 2)
+    margin_error = z_score * std_err        
+    low_bound = avg_value - margin_error    
+    up_bound = avg_value + margin_error     
+    print(f"95% Confidence Interval (per unit): ({low_bound:.4f} - {up_bound:.4f}) Range: {up_bound - low_bound:.4f}")
+    if units > 1:
+        low_bound_total = low_bound * units       
+        up_bound_total = up_bound * units         
+        print(f"95% Confidence Interval (total): ({low_bound_total:,.2f} - {up_bound_total:,.2f}) Range: {up_bound_total - low_bound_total:,.2f}")
 
-        # 95% Confidence Interval: Per Unit
-        low_bound = avg_value - margin_error
-        up_bound = avg_value + margin_error
-        print(f"95% Confidence Interval (per unit): ({low_bound:.4f} - {up_bound:.4f}) Range: {up_bound - low_bound:.4f}")
+    # Calculate and output the probability of the threshold being hit
+    total_hit_count = sum(hit_counts)
+    total_paths = iterations * 2 if use_antithetic else iterations
+    threshold_probability = total_hit_count / total_paths
+    print(f"\nProbability of threshold being hit: {threshold_probability*100:.2f}%")
 
-        # 95% Confidence Interval: Total
-        if units > 1:
-            low_bound = low_bound * units
-            up_bound = up_bound * units
-            print(f"95% Confidence Interval (total): ({low_bound:,.2f} - {up_bound:,.2f}) Range: {up_bound - low_bound:,.2f}")
-
-        # Output run time statistics
-        print(f"\nIterations: {iterations:,}")
-        print(f"\nTime taken (seconds): {run_time:.3f}")
-        print(f"Iterations per second: {iterations / (run_time):,.0f}\n")  
+    # Output runtime statistics
+    print(f"\nIterations: {iterations:,}")
+    print(f"\nTime taken (seconds): {run_time:.3f}")
+    print(f"Iterations per second: {iterations / run_time:,.0f}\n")  
     
-        # Output to csv file
-        if output_to_csv:
-            results_df = pd.DataFrame({'Present Value': pv_arr, 'Ending Stock Price': end_stks})
-            results_df.to_csv(f'results {iterations}.csv', index=False)
+    # Optionally output results to a CSV file
+    if output_to_csv:
+        results_df = pd.DataFrame({'Present Value': pv_arr, 'Ending Stock Price': end_stks})
+        results_df.to_csv(f'results {iterations}.csv', index=False)
     
 
 if __name__ == '__main__':
 
     # Initialize parameters
     S0 = 5.00
-    strike = 0.01
-    rfr = 0.05
-    vol = 0.50
-    term = 1.00
-    iterations = 100_000
-    threshold = 10.00
+    strike = 5.00
+    rfr = 0.03
+    vol = 0.40
+    term = 5.00
+    iterations = 500_000
+    threshold = 12.00
     m_days = 20
     units = 1
-    use_antithetic=True
+    use_antithetic = True
     
-    # Set to True to output results to a csv file
+    # Set to True to output results to a CSV file
     output_to_csv = False
     
-    # Set the number of processes to use in multiprocessing implementation
-    num_processes = int(os.cpu_count() * 3/4)  # Adjust this based on your machine's capabilities
+    # Set the number of processes to use (adjust based on your machine)
+    num_processes = int(os.cpu_count() * 3/4)
 
-    # Run the function with multiprocessing
-    start = time.time() # start time
-    fv, end_stks = gen_paths_multiprocessing(S0, rfr, vol, term, iterations, strike, threshold, m_days, num_processes, use_antithetic)
-    run_time = time.time() - start # time to run simulation
+    # Run the simulation using multiprocessing
+    start = time.time()     # start time
+    fv, end_stks, hit_counts = gen_paths_multiprocessing(
+        S0, rfr, vol, term, iterations, strike, threshold, m_days, num_processes, use_antithetic)
+    run_time = time.time() - start  # Total run time of simulation
     
-    # Call the output_results function
-    output_results(fv, end_stks, rfr, term, iterations, units, S0, run_time)
-    
-
-    
+    # Output all results including threshold probability
+    output_results(fv, end_stks, hit_counts, rfr, term, iterations, units, S0, run_time, use_antithetic)
